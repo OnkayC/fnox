@@ -33,7 +33,7 @@ eval "$(fnox activate bash)"  # or zsh, fish — see docs for Nushell
 
 fnox lets you store secrets in two ways:
 
-1. **Encrypted in git** - Using age, AWS KMS, Azure KMS, or GCP KMS
+1. **Encrypted in git** - Using age, age-plugin-yubikey, AWS KMS, Azure KMS, or GCP KMS
 2. **Remote in cloud** - Using AWS Secrets Manager, AWS Parameter Store, Azure Key Vault, GCP Secret Manager, 1Password, Bitwarden, Bitwarden Secrets Manager, Infisical, or HashiCorp Vault
 
 Your `fnox.toml` config file either contains encrypted secrets or references to remote secrets. Use `fnox exec` to run commands with secrets loaded, or enable shell integration to auto-load secrets when you `cd` into a directory.
@@ -42,7 +42,7 @@ Your `fnox.toml` config file either contains encrypted secrets or references to 
 
 ### 🔐 Encryption (secrets in git, encrypted)
 
-- [**age**](https://fnox.jdx.dev/providers/age) - Modern encryption (works with SSH keys!)
+- [**age**](https://fnox.jdx.dev/providers/age) - Modern encryption (works with SSH keys and age plugins such as age-plugin-yubikey)
 - [**aws-kms**](https://fnox.jdx.dev/providers/aws-kms) - AWS Key Management Service
 - [**azure-kms**](https://fnox.jdx.dev/providers/azure-kms) - Azure Key Vault encryption
 - [**gcp-kms**](https://fnox.jdx.dev/providers/gcp-kms) - Google Cloud KMS
@@ -84,7 +84,7 @@ Your `fnox.toml` config file either contains encrypted secrets or references to 
 
 ### Provider Guides
 
-- [Age Encryption](https://fnox.jdx.dev/providers/age) - Simple, free, works with SSH keys
+- [Age Encryption](https://fnox.jdx.dev/providers/age) - Simple, free, works with SSH keys and age-plugin-yubikey
 - [AWS Secrets Manager](https://fnox.jdx.dev/providers/aws-sm) - Centralized AWS secret management
 - [AWS Parameter Store](https://fnox.jdx.dev/providers/aws-ps) - Simple, cost-effective AWS secret storage
 - [1Password](https://fnox.jdx.dev/providers/1password) - Integrate with 1Password CLI
@@ -124,6 +124,33 @@ fnox exec -- npm start
 
 # Production (uses AWS Secrets Manager)
 fnox exec --profile production -- ./deploy.sh
+```
+
+## Age Plugins / YubiKey
+
+The `age` provider supports standard SSH and native age recipients directly. It also supports
+age plugin recipients and identities, including `age-plugin-yubikey`.
+
+When fnox detects a plugin recipient such as `age1yubikey...` or a plugin identity such as
+`AGE-PLUGIN-YUBIKEY-...`, it shells out to your local `age` or `rage` binary so the matching
+plugin can handle encryption or decryption.
+
+Requirements:
+
+- `age` or `rage` must be installed and available on `PATH`
+- For YubiKey-backed recipients or identities, `age-plugin-yubikey` must also be installed and available on `PATH`
+- Your configured age identity can come from the provider `key_file`, the default `~/.config/fnox/age.txt`, or inline via `FNOX_AGE_KEY`
+
+Example:
+
+```toml
+[providers]
+age = { type = "age", recipients = ["age1yubikey1q..."] }
+```
+
+```text
+# ~/.config/fnox/age.txt
+AGE-PLUGIN-YUBIKEY-...
 ```
 
 ## Why fnox?

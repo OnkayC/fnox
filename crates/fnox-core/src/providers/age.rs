@@ -1,11 +1,12 @@
 use crate::env;
 use crate::error::{FnoxError, Result};
 use async_trait::async_trait;
-use std::io::Read;
+use std::collections::BTreeMap;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 pub fn env_dependencies() -> &'static [&'static str] {
-    &[]
+    &["PATH"]
 }
 
 pub struct AgeEncryptionProvider {
@@ -29,19 +30,26 @@ impl crate::providers::Provider for AgeEncryptionProvider {
     }
 
     async fn encrypt(&self, plaintext: &str) -> Result<String> {
-        use std::io::Write;
-
         if self.recipients.is_empty() {
             return Err(FnoxError::AgeNotConfigured);
         }
 
-        // Parse recipients - try both SSH and native age formats
-        let mut parsed_recipients: Vec<Box<dyn age::Recipient + Send + Sync>> = Vec::new();
+        // Parse recipients - try SSH, native age, and plugin formats.
+        let mut parsed_recipients: Vec<Box<dyn age::Recipient>> = Vec::new();
+        let mut plugin_recipients: BTreeMap<String, Vec<age::plugin::Recipient>> = BTreeMap::new();
 
         for recipient in &self.recipients {
             // Try parsing as SSH recipient first
             if let Ok(ssh_recipient) = recipient.parse::<age::ssh::Recipient>() {
                 parsed_recipients.push(Box::new(ssh_recipient));
+                continue;
+            }
+
+            if let Ok(plugin_recipient) = recipient.parse::<age::plugin::Recipient>() {
+                plugin_recipients
+                    .entry(plugin_recipient.plugin().to_string())
+                    .or_default()
+                    .push(plugin_recipient);
                 continue;
             }
 
@@ -56,6 +64,20 @@ impl crate::providers::Provider for AgeEncryptionProvider {
                     });
                 }
             }
+        }
+
+        for (plugin_name, recipients) in plugin_recipients {
+            let plugin = age::plugin::RecipientPluginV1::new(
+                &plugin_name,
+                &recipients,
+                &[],
+                age::NoCallbacks,
+            )
+            .map_err(|e| FnoxError::AgeEncryptionFailed {
+                details: e.to_string(),
+            })?;
+
+            parsed_recipients.push(Box::new(plugin));
         }
 
         if parsed_recipients.is_empty() {
@@ -206,5 +228,25 @@ impl crate::providers::Provider for AgeEncryptionProvider {
         String::from_utf8(decrypted).map_err(|e| FnoxError::AgeDecryptionFailed {
             details: format!("Failed to decode UTF-8: {}", e),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_yubikey_plugin_recipient() {
+        let recipient = "age1yubikey1qwt50d05nh5vutpdzmlg5wn80xq5negm4uj9ghv0snvdd3yysf5yw3rhl3t"
+            .parse::<age::plugin::Recipient>()
+            .unwrap();
+
+        assert_eq!(recipient.plugin(), "yubikey");
+    }
+
+    #[test]
+    fn parses_plugin_identity_file() {
+        let identity = age::plugin::Identity::default_for_plugin("yubikey").to_string();
+        let identity_file = age::IdentityFile::from_buffer(std::io::Cursor::new(identity));
+
+        assert!(identity_file.is_ok());
     }
 }
